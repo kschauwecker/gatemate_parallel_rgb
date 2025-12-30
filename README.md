@@ -3,7 +3,7 @@
 This is an implementation of a parallel RGB interface for the GateMate FPGAs by Cologne Chip.
 The implementation is targeted for the open source FMC Video IO card:
 
-https://github.com/kschauwecker/fmc_video_io_card/tree/main
+https://github.com/kschauwecker/fmc_video_io_card/
 
 The motivation for implementing a parallel RGB interface on this FPGA is, that the FPGA
 IOs don't support the TMDS standard, which is required for HDMI. There have been some demonstrations
