@@ -2,6 +2,7 @@
 
 This is an implementation of a parallel RGB interface for the GateMate FPGAs by Cologne Chip.
 The implementation is targeted for the open source FMC Video IO card:
+
 https://github.com/kschauwecker/fmc_video_io_card/tree/main
 
 The motivation for implementing a parallel RGB interface on this FPGA is, that the FPGA
