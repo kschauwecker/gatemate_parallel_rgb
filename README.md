@@ -15,7 +15,7 @@ IOs don't support the TMDS standard, which is required for HDMI. There have been
 showing that it is still possible to drive an HDMI signal through the FPGA IOs for low resolutions,
 but these approaches are unlikely to work for high-resolution / high-frame-rate modes.
 
-The targeted FMC card has as a parallel RGB to HDMI converter IC (TFP410PAPR from Texas Instruments).
+The targeted FMC card has as a parallel RGB to HDMI converter IC (TFP410 from Texas Instruments).
 With that it is possible to drive a high-resolution HDMI output directly from the FPGA.
  
 The IP is capable to drive 1080p @ 60 Hz or 720p @ 60 Hz. Timing closure is even achieved
