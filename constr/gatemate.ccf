@@ -44,5 +44,44 @@
 # overwritten by individual settings for specific GPIOs, e.g.:
 #   default_GPIO | DRIVE=3; # sets all output strengths to 3mA, unless overwritten
 
-Pin_in   "ref_clk"  Loc = "IO_SB_A8" | SCHMITT_TRIGGER=true;
-Pin_out  "led"  Loc = "IO_SB_B4"; # D1
+Pin_in      "ref_clk"       Loc = "IO_SB_A8";
+Pin_out     "led"           Loc = "IO_SB_B4"; # D1
+
+Pin_out     "rgb_clk_p"     Loc = "IO_EA_B0";
+Pin_out     "rgb_clk_n"     Loc = "IO_EA_A0";
+Pin_out     "rgb_data[0]"   Loc = "IO_WB_A6" | SLEW = fast;
+Pin_out     "rgb_data[1]"   Loc = "IO_WB_B6" | SLEW = fast;
+Pin_out     "rgb_data[2]"   Loc = "IO_WB_A8" | SLEW = fast;
+Pin_out     "rgb_data[3]"   Loc = "IO_WB_A2" | SLEW = fast;
+Pin_out     "rgb_data[4]"   Loc = "IO_WB_B8" | SLEW = fast;
+Pin_out     "rgb_data[5]"   Loc = "IO_WB_B2" | SLEW = fast;
+Pin_out     "rgb_data[6]"   Loc = "IO_EA_B1" | SLEW = fast;
+Pin_out     "rgb_data[7]"   Loc = "IO_EA_A1" | SLEW = fast;
+Pin_out     "rgb_data[8]"   Loc = "IO_EA_B6" | SLEW = fast;
+Pin_out     "rgb_data[9]"   Loc = "IO_EA_A6" | SLEW = fast;
+Pin_out     "rgb_data[10]"  Loc = "IO_EA_B8" | SLEW = fast;
+Pin_out     "rgb_data[11]"  Loc = "IO_EA_A8" | SLEW = fast;
+Pin_out     "rgb_data[12]"  Loc = "IO_EB_B7" | SLEW = fast;
+Pin_out     "rgb_data[13]"  Loc = "IO_EB_A7" | SLEW = fast;
+Pin_out     "rgb_data[14]"  Loc = "IO_NB_B6" | SLEW = fast;
+Pin_out     "rgb_data[15]"  Loc = "IO_NB_A6" | SLEW = fast;
+Pin_out     "rgb_data[16]"  Loc = "IO_EB_B4" | SLEW = fast;
+Pin_out     "rgb_data[17]"  Loc = "IO_EB_A4" | SLEW = fast;
+Pin_out     "rgb_data[18]"  Loc = "IO_NB_B7" | SLEW = fast;
+Pin_out     "rgb_data[19]"  Loc = "IO_NB_A7" | SLEW = fast;
+Pin_out     "rgb_data[20]"  Loc = "IO_NB_B2" | SLEW = fast;
+Pin_out     "rgb_data[21]"  Loc = "IO_NB_A2" | SLEW = fast;
+Pin_out     "rgb_data[22]"  Loc = "IO_NB_B4" | SLEW = fast;
+Pin_out     "rgb_data[23]"  Loc = "IO_NB_A4" | SLEW = fast;
+Pin_out     "rgb_de"        Loc = "IO_WC_A3" | SLEW = fast;
+Pin_out     "rgb_hsync"     Loc = "IO_WB_B4" | SLEW = fast;
+Pin_out     "rgb_vsync"     Loc = "IO_WB_A4" | SLEW = fast;
+
+Pin_out     "pmod[0]"  Loc = "IO_SA_A0" | SLEW = fast;
+Pin_out     "pmod[1]"  Loc = "IO_SA_B0" | SLEW = fast;
+Pin_out     "pmod[2]"  Loc = "IO_SA_B4" | SLEW = fast;
+Pin_out     "pmod[3]"  Loc = "IO_SA_A4" | SLEW = fast;
+Pin_out     "pmod[4]"  Loc = "IO_SA_A3" | SLEW = fast;
+Pin_out     "pmod[5]"  Loc = "IO_SA_B3" | SLEW = fast;
+Pin_out     "pmod[6]"  Loc = "IO_SA_B6" | SLEW = fast;
+Pin_out     "pmod[7]"  Loc = "IO_SA_A6" | SLEW = fast;

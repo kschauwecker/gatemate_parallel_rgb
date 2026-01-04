@@ -17,6 +17,8 @@ package synth_lib is
     -- Helper function for conditional constant assignment
     function select_constant(cond: boolean; if_true, if_false: integer) return integer;
     function select_constant(cond: boolean; if_true, if_false: std_ulogic_vector) return std_ulogic_vector;
+    function select_constant(cond: boolean; if_true, if_false: std_ulogic) return std_ulogic;
+    function select_constant(cond: boolean; if_true, if_false: real) return real;
 
     -------------------------------------------------
     -- IO functions
@@ -63,6 +65,28 @@ package body synth_lib is
     ----------------------------------------------------------------------
 
     function select_constant(cond: boolean; if_true, if_false: std_ulogic_vector) return std_ulogic_vector is
+    begin
+        if cond then
+            return if_true;
+        else
+            return if_false;
+        end if;
+    end;
+
+    ----------------------------------------------------------------------
+
+    function select_constant(cond: boolean; if_true, if_false: real) return real is
+    begin
+        if cond then
+            return if_true;
+        else
+            return if_false;
+        end if;
+    end;
+
+    ----------------------------------------------------------------------
+
+    function select_constant(cond: boolean; if_true, if_false: std_ulogic) return std_ulogic is
     begin
         if cond then
             return if_true;

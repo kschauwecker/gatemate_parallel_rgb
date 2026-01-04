@@ -8,13 +8,16 @@ WRITE_SIGNALS:=1
 # Source files
 SOURCES:=\
 	src/context.vhd\
-	src/toplevel.vhd
+	src/toplevel.vhd\
+	src/parallel_rgb.vhd
 
 SIM_SOURCES:=\
 	sim/common/context.vhd\
 	sim/gatemate_primitives/cc_pll.vhd\
 	sim/gatemate_primitives/cc_bufg.vhd\
 	sim/gatemate_primitives/cc_usr_rstn.vhd\
+	sim/gatemate_primitives/cc_lvds_obuf.vhd\
+	sim/gatemate_primitives/cc_oddr.vhd\
 	sim/testbenches/${SIM_MODULE}.vhd
 
 SYNTHLIB_SOURCES:=\
@@ -146,11 +149,12 @@ sim: $(SIM_OBJDIR)/$(SIM_MODULE)
 # YOSYS SYNTHESIS #
 ###################
 
-YOSYS:=$(OSS_CAD_DIR)/bin/yosys -m $(OSS_CAD_DIR)/share/yosys/plugins/ghdl.so
-SYNTHFLAGS:=-luttree -retime -nomx8
+YOSYS:=$(OSS_CAD_DIR)/bin/yosys
+SYNTHFLAGS:=-luttree -nomx8 -retime
+#-noflatten
 
 NEXTPNR:=$(OSS_CAD_DIR)/bin/nextpnr-himbaechel
-NEXTPNR_FLAGS:=--device CCGM1A1 --router router2
+NEXTPNR_FLAGS:=--device CCGM1A1 --router router2 --vopt fpga_mode=economy #--vopt time_mode=typical
 
 LOADER:=$(OSS_CAD_DIR)/bin/openFPGALoader
 GMPACK:=$(OSS_CAD_DIR)/bin/gmpack
@@ -160,18 +164,25 @@ SYNTHLIB_SOURCES_ABS=$(addprefix $(CWD)/,$(SYNTHLIB_SOURCES))
 
 build/log:
 	mkdir -p build/log
-build/net:
-	mkdir -p build/net
+build/synth:
+	mkdir -p build/synth
 build/impl:
 	mkdir -p build/impl
 
-synth: build/log build/net
+synth: build/log build/synth
+	@echo "$(COL)Synthesizing VHDL to Verilog$(CLR)"
+	$(GHDL) synth --warn-no-binding --no-formal -fexplicit --out=verilog $(VHDL_STD) --work=synth_lib $(SYNTHLIB_SOURCES_ABS)\
+		--work=$(WORK_SYNTH) $(SOURCES_ABS) -e $(TOP) > build/synth/$(TOP).v
+	@echo "$(COL)Synthesizing Verilog$(CLR)"
 	$(YOSYS) -l $(CWD)/build/log/synth.log -p "\
-		ghdl -v --warn-no-binding --no-formal $(VHDL_STD) --work=synth_lib $(SYNTHLIB_SOURCES_ABS) --work=$(WORK_SYNTH) $(SOURCES_ABS) -e $(TOP);\
-		synth_gatemate -top $(TOP) -vlog $(CWD)/build/net/$(TOP)_synth.v -json $(CWD)/build/net/$(TOP)_synth.json $(SYNTHFLAGS)"
+		read_verilog build/synth/$(TOP).v; \
+		synth_gatemate -top $(TOP) -vlog $(CWD)/build/synth/$(TOP)_synth.v -json $(CWD)/build/synth/$(TOP)_synth.json $(SYNTHFLAGS)"
 
 impl: build/impl
-	$(NEXTPNR) $(NEXTPNR_FLAGS) --json build/net/$(TOP)_synth.json --vopt ccf=constr/gatemate.ccf --write build/$(TOP).json --vopt out=build/bitstream.txt | tee build/log/impl.log
+	@echo "$(COL)Running Implementation$(CLR)"
+	$(NEXTPNR) $(NEXTPNR_FLAGS) --json build/synth/$(TOP)_synth.json --vopt ccf=constr/gatemate.ccf --sdc=constr/timing.sdc\
+		--write build/$(TOP).json --vopt out=build/bitstream.txt | tee build/log/impl.log
+	@echo "$(COL)Generating Bitfile$(CLR)"
 	$(GMPACK) build/bitstream.txt build/bitfile.bit
 
 run: build/bitfile.bit
