@@ -5,6 +5,9 @@ This is an implementation of a parallel RGB interface for the
 The implementation is targeted for the
 [open source FMC Video IO card](https://github.com/kschauwecker/fmc_video_io_card/).
 
+Please see the [blog post on Elektronaut](https://elektronaut.tech/en/fpga/driving-full-hd-video-with-the-cologne-chip-gatemate-fpga/)
+for more details on this project.
+
 ![Demo Picture](demo_picture.jpg)
 
 The motivation for implementing a parallel RGB interface on this FPGA is that the FPGA
