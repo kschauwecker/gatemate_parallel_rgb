@@ -134,14 +134,16 @@ begin
             pmod <= (others => '0');
             frame_counter <= (others => '0');
         elsif rising_edge(pixel_clk) then
-            led <= frame_counter(frame_counter'left);
+            led <= frame_counter(5);
             pmod <= (others => '0');
 
             if pixel_tready = '1' or pixel_tvalid = '0' then
                 -- Output test data
-                pixel_tdata(23 downto 0) <= std_ulogic_vector(resize(x*PARALLEL_PIXELS, 8) & resize(y+frame_counter, 8) & resize(x+frame_counter, 8));
+                pixel_tdata(23 downto 0) <= std_ulogic_vector(resize(x*PARALLEL_PIXELS, 8) & resize(y+frame_counter, 8)
+                    & resize(x*PARALLEL_PIXELS+frame_counter, 8));
                 if PARALLEL_PIXELS > 1 then
-                    pixel_tdata(47 downto 24) <= std_ulogic_vector(resize(x*PARALLEL_PIXELS+1, 8) & resize(y+frame_counter, 8) & resize(x+frame_counter+1, 8));
+                    pixel_tdata(47 downto 24) <= std_ulogic_vector(resize(x*PARALLEL_PIXELS+1, 8) & resize(y+frame_counter, 8)
+                        & resize(x*PARALLEL_PIXELS+frame_counter+1, 8));
                 end if;
                 pixel_tvalid <= '1';
 

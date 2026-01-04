@@ -111,7 +111,7 @@ architecture rtl of parallel_rgb is
         );
     end component;
 
-    -- Vor video timing parameters please see:
+    -- For video timing parameters please see:
     -- https://tomverbeure.github.io/video_timings_calculator
     -- We are using either 720p CVT-RB or 1080p CEA-861
     constant PIXEL_CLOCK: real := select_constant(VIDEO_MODE = "720p", 64.0, 148.5); --MHz
