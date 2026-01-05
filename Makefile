@@ -44,6 +44,7 @@ CWD:=$(shell pwd)
 
 # Color coding escape sequences
 COL=\e[44m
+ERR=\e[41m
 CLR=\e[0m\e[49m
 
 ###################
@@ -82,12 +83,15 @@ help:
 	@echo "Availabel makefile rules:\n"
 	@echo "sim:    Build and run simulation with GHDL"
 	@echo "build:  Run synthesis, implementation and bitfile creation"
+	@echo "fbuild: Fast build, like build but run implementation with relaxed timing settings
 	@echo "synth:  Run synthesis only"
-	@echo "impl:   Run implementation only"
+	@echo "impl:   Run implementation with strict timing settings and try different seeds if it fails"
+	@echo "fimpl:  Run implementation with relaxed timing settings"
 	@echo "bit:    Run bitfile creation only"
-	@echo "run:    Loads the current bitflile to the FPGA through JTAG"
-	@echo "flash:  Flashes the current bitflile to the FPGA through JTAG"
+	@echo "run:    Loads the current bitfile to the FPGA through JTAG"
+	@echo "flash:  Flashes the current bitfile to the FPGA through JTAG"
 	@echo "gui:    Launches NEXTPNR GUI"
+	@echo "clean:  Delete all build files (including simulation)"
 
 # Create build directories
 $(SRC_OBJDIR):
@@ -151,10 +155,13 @@ sim: $(SIM_OBJDIR)/$(SIM_MODULE)
 
 YOSYS:=$(OSS_CAD_DIR)/bin/yosys
 SYNTHFLAGS:=-luttree -nomx8 -retime
-#-noflatten
 
 NEXTPNR:=$(OSS_CAD_DIR)/bin/nextpnr-himbaechel
-NEXTPNR_FLAGS:=--device CCGM1A1 --router router2 --vopt fpga_mode=economy #--vopt time_mode=typical
+NEXTPNR_FLAGS:=--device CCGM1A1 --vopt fpga_mode=economy
+STRICT_TIMING_SETTINGS:=--vopt time_mode=worst
+RELAXED_TIMING_SETTINGS:=--router router2 --vopt time_mode=typical
+PLACING_MAX_RETRIES=10
+SEED:=0 # Overwritten for non-fast builds
 
 LOADER:=$(OSS_CAD_DIR)/bin/openFPGALoader
 GMPACK:=$(OSS_CAD_DIR)/bin/gmpack
@@ -178,12 +185,34 @@ synth: build/log build/synth
 		read_verilog build/synth/$(TOP).v; \
 		synth_gatemate -top $(TOP) -vlog $(CWD)/build/synth/$(TOP)_synth.v -json $(CWD)/build/synth/$(TOP)_synth.json $(SYNTHFLAGS)"
 
-impl: build/impl
-	@echo "$(COL)Running Implementation$(CLR)"
+pnr: build/impl
 	$(NEXTPNR) $(NEXTPNR_FLAGS) --json build/synth/$(TOP)_synth.json --vopt ccf=constr/gatemate.ccf --sdc=constr/timing.sdc\
-		--write build/$(TOP).json --vopt out=build/bitstream.txt | tee build/log/impl.log
+		--write build/impl/$(TOP).json --report build/impl/timing.json --detailed-timing-report \
+		--vopt out=build/impl/bitstream.txt --seed=$(SEED) --log build/log/impl.log;\
+	failed=`grep ERROR build/log/impl.log | wc -l`;\
+	if test $$failed -ne 0; then \
+		echo "$(ERR)FAILED!$(CLR)"; \
+		exit 1; \
+	else \
+		echo "$(COL)SUCCESS!$(CLR)"; \
+		break; \
+	fi \
+
+fimpl:
+	@echo "$(COL)Fast Implementation$(CLR)"
+	$(MAKE) NEXTPNR_FLAGS="$(NEXTPNR_FLAGS) $(RELAXED_TIMING_SETTINGS)" pnr
 	@echo "$(COL)Generating Bitfile$(CLR)"
-	$(GMPACK) build/bitstream.txt build/bitfile.bit
+	$(GMPACK) build/impl/bitstream.txt build/bitfile.bit
+
+impl:
+	# Repeat implementation with different seeds until success
+	@for i in $$(seq 1 1 $(PLACING_MAX_RETRIES)); do \
+		echo "$(COL)Implementation with seed=$$i$(CLR)";\
+		$(MAKE) SEED=$$i NEXTPNR_FLAGS="$(NEXTPNR_FLAGS) $(STRICT_TIMING_SETTINGS)" pnr  && break; \
+		test $$i -ne $(PLACING_MAX_RETRIES) || exit 1; \
+	done
+	@echo "$(COL)Generating Bitfile$(CLR)"
+	$(GMPACK) build/impl/bitstream.txt build/bitfile.bit
 
 run: build/bitfile.bit
 	$(LOADER) -r build/bitfile.bit
@@ -192,9 +221,11 @@ flash: build/bitfile.bit
 	$(LOADER) -f -r build/bitfile.bit
 
 gui:
-	$(NEXTPNR) $(NEXTPNR_FLAGS) --gui --json build/$(TOP).json
+	$(NEXTPNR) $(NEXTPNR_FLAGS) --gui --json build/impl/$(TOP).json
 
 build: synth impl
+
+fbuild: synth fimpl
 
 ########
 # MISC #
