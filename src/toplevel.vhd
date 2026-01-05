@@ -83,6 +83,7 @@ architecture rtl of toplevel is
     signal x: unsigned(log2(SCREEN_MAX_WIDTH/PARALLEL_PIXELS)-1 downto 0);
     signal y: unsigned(log2(SCREEN_MAX_HEIGHT)-1 downto 0);
     signal frame_counter: unsigned(7 downto 0);
+    signal prev_frame_counter: unsigned(7 downto 0);
 begin
     -- Componenbt for generating the Parallel RGB signals
     rgb: component parallel_rgb
@@ -133,16 +134,17 @@ begin
             led <= '0';
             pmod <= (others => '0');
             frame_counter <= (others => '0');
+            prev_frame_counter <= (others => '0');
         elsif rising_edge(pixel_clk) then
-            led <= frame_counter(5);
+            led <= frame_counter(4);
             pmod <= (others => '0');
 
             if pixel_tready = '1' or pixel_tvalid = '0' then
                 -- Output test data
-                pixel_tdata(23 downto 0) <= std_ulogic_vector(resize(x*PARALLEL_PIXELS, 8) & resize(y+frame_counter, 8)
-                    & resize(x*PARALLEL_PIXELS+frame_counter, 8));
+                pixel_tdata(23 downto 0) <= std_ulogic_vector(resize(x*PARALLEL_PIXELS, 8) & resize(y+prev_frame_counter, 8)
+                    & resize(x*PARALLEL_PIXELS+prev_frame_counter, 8));
                 if PARALLEL_PIXELS > 1 then
-                    pixel_tdata(47 downto 24) <= std_ulogic_vector(resize(x*PARALLEL_PIXELS+1, 8) & resize(y+frame_counter, 8)
+                    pixel_tdata(47 downto 24) <= std_ulogic_vector(resize(x*PARALLEL_PIXELS+1, 8) & resize(y+prev_frame_counter, 8)
                         & resize(x*PARALLEL_PIXELS+frame_counter+1, 8));
                 end if;
                 pixel_tvalid <= '1';
@@ -160,6 +162,7 @@ begin
             if pixel_eof = '1' then
                 y <= (others => '0');
                 x <= (others => '0');
+                prev_frame_counter <= frame_counter;
                 frame_counter <= frame_counter + 1;
                 pixel_tvalid <= '0';
             end if;

@@ -47,7 +47,7 @@ entity parallel_rgb is
 
         -- Synchronization signals for data source.
         -- EOL will be asserted immedeately after receiving the last pixel of a row
-        -- EOF will be asserted after a significant delay
+        -- EOF will be asserted after a some delay
         pixel_eol: out std_ulogic;
         pixel_eof: out std_ulogic
     );
@@ -146,12 +146,14 @@ architecture rtl of parallel_rgb is
     signal vsync_active: std_ulogic;
     signal hsync_active: std_ulogic;
     signal internal_hsync: std_ulogic;
+    signal internal_hsync_ddr: std_ulogic;
     signal internal_vsync: std_ulogic;
+    signal internal_vsync_ddr: std_ulogic;
 
     signal internal_de: std_ulogic;
+    signal internal_de_ddr: std_ulogic;
     signal pixel_buf_ddr: std_ulogic_vector(23 downto 0);
     signal pixel_out: std_ulogic_vector(PARALLEL_PIXELS*24 - 1 downto 0);
-    signal pixel_buf_ddr_valid: std_ulogic;
     signal row_ready: std_ulogic;
 begin
     assert PARALLEL_PIXELS = 1 or PARALLEL_PIXELS = 2 severity failure;
@@ -182,9 +184,6 @@ begin
 
     -- Dual pixel output mode using DDR
     dual_pixel: if PARALLEL_PIXELS = 2 generate
-        -- DDR is only really needed for data signals but we also use
-        -- it for the sync signals for consistent timing.
-
         -- Clocking options: diff/single, invert/non-invert
         dual_diff_clk: if DIFF_RGB_CLK generate
             o_clk_diff: component CC_LVDS_OBUF
@@ -213,7 +212,7 @@ begin
         o_de: component CC_ODDR
             port map (
                 D0 => internal_de,
-                D1 => internal_de,
+                D1 => internal_de_ddr,
                 CLK => pixel_clk,
                 DDR  => pixel_clk,
                 Q => rgb_de
@@ -222,7 +221,7 @@ begin
         o_hsync: component CC_ODDR
             port map (
                 D0 => internal_hsync,
-                D1 => internal_hsync,
+                D1 => internal_hsync_ddr,
                 CLK => pixel_clk,
                 DDR  => pixel_clk,
                 Q => rgb_hsync
@@ -231,7 +230,7 @@ begin
         o_vsync: component CC_ODDR
             port map (
                 D0 => internal_vsync,
-                D1 => internal_vsync,
+                D1 => internal_vsync_ddr,
                 CLK => pixel_clk,
                 DDR  => pixel_clk,
                 Q => rgb_vsync
@@ -240,8 +239,8 @@ begin
         o_data: for i in 23 downto 0 generate
             o_rgb: component CC_ODDR
                 port map (
-                    D0 => pixel_out(i),
-                    D1 => pixel_out(i+24),
+                    D0 => pixel_out(i) and internal_de,
+                    D1 => pixel_out(i+24) and internal_de_ddr,
                     CLK => pixel_clk,
                     DDR  => pixel_clk,
                     Q => rgb_data(i)
@@ -253,18 +252,22 @@ begin
         begin
             if usr_reset_n = '0' then
                 pixel_out(47 downto 24) <= (others => '0');
+                internal_de_ddr <= '0';
+                internal_hsync_ddr <= '0';
+                internal_vsync_ddr <= '0';
             elsif falling_edge(pixel_clk) then
                 pixel_out(47 downto 24) <= (others => '0');
-                if pixel_buf_ddr_valid = '1' then
-                    pixel_out(47 downto 24) <= pixel_buf_ddr;
-                end if;
+                pixel_out(47 downto 24) <= pixel_buf_ddr;
+                internal_de_ddr <= internal_de;
+                internal_hsync_ddr <= internal_hsync;
+                internal_vsync_ddr <= internal_vsync;
             end if;
         end process;
     end generate;
 
     -- Single pixel output mode does not require DDR
     single_pixel: if PARALLEL_PIXELS = 1 generate
-        rgb_data <= pixel_out;
+        rgb_data <= pixel_out when internal_de='1' else (others => '0');
 
         single_diff_clk: if DIFF_RGB_CLK generate
             o_clk: component CC_LVDS_OBUF
@@ -313,7 +316,6 @@ begin
 
             pixel_out(23 downto 0) <= (others => '0');
             pixel_buf_ddr <= (others => '0');
-            pixel_buf_ddr_valid <= '0';
 
             pixel_eol <= '0';
             pixel_eof <= '0';
@@ -321,15 +323,16 @@ begin
             pixel_tready <= '0';
             row_ready <= '1';
         elsif rising_edge(pixel_clk) then
-            -- Receive first half of AXI stream data
+            -- We always store the incomming pixel data without caring about the TREADY
+            -- signal for improving timing.
+            pixel_out(23 downto 0) <= pixel_tdata(23 downto 0);
+            if PARALLEL_PIXELS = 2 then
+                pixel_buf_ddr <= pixel_tdata(47 downto 24);
+            end if;
+
+            -- Receive new pixel from AXI stream
             if pixel_tready = '1' then
                 assert pixel_tvalid = '1' severity failure;
-
-                pixel_out(23 downto 0) <= pixel_tdata(23 downto 0);
-                if PARALLEL_PIXELS = 2 then
-                    pixel_buf_ddr <= pixel_tdata(47 downto 24);
-                end if;
-                pixel_buf_ddr_valid <= '1';
                 internal_de <= '1';
             else
                 internal_de <= '0';
