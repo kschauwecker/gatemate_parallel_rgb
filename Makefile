@@ -9,6 +9,7 @@ WRITE_SIGNALS:=1
 SOURCES:=\
 	src/context.vhd\
 	src/toplevel.vhd\
+	src/rgb_output_stage.vhd\
 	src/parallel_rgb.vhd
 
 SIM_SOURCES:=\
@@ -83,7 +84,7 @@ help:
 	@echo "Availabel makefile rules:\n"
 	@echo "sim:    Build and run simulation with GHDL"
 	@echo "build:  Run synthesis, implementation and bitfile creation"
-	@echo "fbuild: Fast build, like build but run implementation with relaxed timing settings
+	@echo "fbuild: Fast build, like build but run implementation with relaxed timing settings"
 	@echo "synth:  Run synthesis only"
 	@echo "impl:   Run implementation with strict timing settings and try different seeds if it fails"
 	@echo "fimpl:  Run implementation with relaxed timing settings"

@@ -68,6 +68,11 @@ architecture rtl of toplevel is
     end component;
 
     constant PARALLEL_PIXELS: integer := 2;
+    constant VIDEO_MODE: string := "1080p";
+
+    -- constant PARALLEL_PIXELS: integer := 1;
+    -- constant VIDEO_MODE: string := "720p";
+
     constant SCREEN_MAX_WIDTH: integer := 1920;
     constant SCREEN_MAX_HEIGHT: integer := 1080;
 
@@ -91,7 +96,7 @@ begin
             REF_CLK_FREQ => "25",
             PERF_MODE => "ECONOMY",
             PARALLEL_PIXELS => PARALLEL_PIXELS,
-            VIDEO_MODE => "1080p",
+            VIDEO_MODE => VIDEO_MODE,
             INVERT_RGB_CLK => true, -- Pins swapped on PCB
             DIFF_RGB_CLK => true,
 

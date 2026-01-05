@@ -54,7 +54,7 @@ entity parallel_rgb is
 end parallel_rgb;
 
 architecture rtl of parallel_rgb is
-    -- Components for FPGA hard IP
+    -- Required component declarations
     component CC_PLL is
             generic (
             REF_CLK         : string := "0.0";  -- reference input in MHz
@@ -82,32 +82,36 @@ architecture rtl of parallel_rgb is
         );
     end component;
 
-    component CC_ODDR is
+    component rgb_output_stage is
         generic (
-            CLK_INV: integer := 0 -- 0: rising edge, 1: falling edge
-        );
-        port (
-            D0: in std_ulogic;
-            D1: in std_ulogic;
-            CLK: in std_ulogic;
-            DDR: in std_ulogic;
-            Q: out std_ulogic
-        );
-    end component;
+            PARALLEL_PIXELS: integer;                   -- 1 or 2; Must be 2 for 1080p to meet timing
+            INVERT_RGB_CLK: boolean := false;           -- Inverts rgb_clk if true
+            DIFF_RGB_CLK: boolean := true;              -- Choose between differential and single ended clock output
 
-    component CC_LVDS_OBUF is
-        generic (
-            PIN_NAME_P  : string := "UNPLACED";   -- IO_<Dir><Bank>_<Pin><Pin#>
-            PIN_NAME_N  : string := "UNPLACED";   -- secondary diff. signal
-            V_IO        : string := "UNDEFINED";  -- "1.8" or "2.5" Volt
-            LVDS_BOOST  : integer := 0;           -- 0: 3.2 mA, 1: 6.4 mA
-            DELAY_OBF   : integer := 0;           -- input delay: 0..15
-            FF_OBF      : integer := 0            -- 0: disable, 1: enable
+            -- Optional signals for differential clock output
+            DIFF_CLK_PIN_NAME_P: string := "UNPLACED";  -- IO_<Dir><Bank>_<Pin><Pin#>
+            DIFF_CLK_PIN_NAME_N: string := "UNPLACED";  -- secondary diff. signal
+            DIFF_CLK_V_IO      : string := "UNDEFINED"  -- "1.8" or "2.5" Volt
         );
         port (
-            A: in  std_ulogic;
-            O_P: out  std_ulogic;
-            O_N: out  std_ulogic
+            -- Async reset signal
+            usr_reset_n: in std_ulogic;
+
+            -- Parallel RGB output signals
+            rgb_clk_p: out std_ulogic;
+            rgb_clk_n: out std_ulogic; -- Not used if DIFF_RGB_CLK=false
+            rgb_data: out std_ulogic_vector(23 downto 0);
+            rgb_de: out std_ulogic;
+            rgb_hsync: out std_ulogic;
+            rgb_vsync: out std_ulogic;
+
+            -- Input signals
+            input_data_clk: in std_ulogic;
+            input_rgb_clk: in std_ulogic;
+            input_de: in std_ulogic;
+            input_hsync: in std_ulogic;
+            input_vsync: in std_ulogic;
+            input_data: in std_ulogic_vector(PARALLEL_PIXELS*24-1 downto 0)
         );
     end component;
 
@@ -127,7 +131,7 @@ architecture rtl of parallel_rgb is
     constant SYNC_XOR: std_ulogic := select_constant(INVERT_SYNCS, '1', '0');
 
     -- Clocking
-    signal pixel_clk_ddr: std_ulogic;
+    signal rgb_clk: std_ulogic;
 
     -- State counters
     signal x: unsigned(log2(SCREEN_WIDTH/PARALLEL_PIXELS)-1 downto 0);
@@ -145,15 +149,12 @@ architecture rtl of parallel_rgb is
 
     signal vsync_active: std_ulogic;
     signal hsync_active: std_ulogic;
-    signal internal_hsync: std_ulogic;
-    signal internal_hsync_ddr: std_ulogic;
-    signal internal_vsync: std_ulogic;
-    signal internal_vsync_ddr: std_ulogic;
 
+    signal internal_hsync: std_ulogic;
+    signal internal_vsync: std_ulogic;
     signal internal_de: std_ulogic;
-    signal internal_de_ddr: std_ulogic;
-    signal pixel_buf_ddr: std_ulogic_vector(23 downto 0);
-    signal pixel_out: std_ulogic_vector(PARALLEL_PIXELS*24 - 1 downto 0);
+    signal internal_rgb_data: std_ulogic_vector(PARALLEL_PIXELS*24 - 1 downto 0);
+
     signal row_ready: std_ulogic;
 begin
     assert PARALLEL_PIXELS = 1 or PARALLEL_PIXELS = 2 severity failure;
@@ -177,119 +178,36 @@ begin
             USR_PLL_LOCKED      => open,
             CLK0                => pixel_clk,
             CLK90               => open,
-            CLK180              => pixel_clk_ddr,
+            CLK180              => rgb_clk,
             CLK270              => open,
             CLK_REF_OUT         => open
         );
 
-    -- Dual pixel output mode using DDR
-    dual_pixel: if PARALLEL_PIXELS = 2 generate
-        -- Clocking options: diff/single, invert/non-invert
-        dual_diff_clk: if DIFF_RGB_CLK generate
-            o_clk_diff: component CC_LVDS_OBUF
-                generic map(
-                    PIN_NAME_P => DIFF_CLK_PIN_NAME_P,
-                    PIN_NAME_N => DIFF_CLK_PIN_NAME_N,
-                    V_IO => DIFF_CLK_V_IO
-                )
-                port map (
-                    A => select_constant(INVERT_RGB_CLK, not pixel_clk_ddr, pixel_clk_ddr),
-                    O_P => rgb_clk_p,
-                    O_N => rgb_clk_n
-                );
-        else generate
-            o_clk_signle: component CC_ODDR
-                port map (
-                    D0 => select_constant(INVERT_RGB_CLK, not pixel_clk_ddr, pixel_clk_ddr),
-                    D1 => select_constant(INVERT_RGB_CLK, not pixel_clk_ddr, pixel_clk_ddr),
-                    CLK => pixel_clk,
-                    DDR  => pixel_clk,
-                    Q => rgb_clk_p
-                );
-            rgb_clk_n <= '0';
-        end generate;
-
-        o_de: component CC_ODDR
-            port map (
-                D0 => internal_de,
-                D1 => internal_de_ddr,
-                CLK => pixel_clk,
-                DDR  => pixel_clk,
-                Q => rgb_de
-            );
-
-        o_hsync: component CC_ODDR
-            port map (
-                D0 => internal_hsync,
-                D1 => internal_hsync_ddr,
-                CLK => pixel_clk,
-                DDR  => pixel_clk,
-                Q => rgb_hsync
-            );
-
-        o_vsync: component CC_ODDR
-            port map (
-                D0 => internal_vsync,
-                D1 => internal_vsync_ddr,
-                CLK => pixel_clk,
-                DDR  => pixel_clk,
-                Q => rgb_vsync
-            );
-
-        o_data: for i in 23 downto 0 generate
-            o_rgb: component CC_ODDR
-                port map (
-                    D0 => pixel_out(i) and internal_de,
-                    D1 => pixel_out(i+24) and internal_de_ddr,
-                    CLK => pixel_clk,
-                    DDR  => pixel_clk,
-                    Q => rgb_data(i)
-                );
-        end generate;
-
-        -- Output second clock cycle for DDR data
-        process(pixel_clk, usr_reset_n)
-        begin
-            if usr_reset_n = '0' then
-                pixel_out(47 downto 24) <= (others => '0');
-                internal_de_ddr <= '0';
-                internal_hsync_ddr <= '0';
-                internal_vsync_ddr <= '0';
-            elsif falling_edge(pixel_clk) then
-                pixel_out(47 downto 24) <= (others => '0');
-                pixel_out(47 downto 24) <= pixel_buf_ddr;
-                internal_de_ddr <= internal_de;
-                internal_hsync_ddr <= internal_hsync;
-                internal_vsync_ddr <= internal_vsync;
-            end if;
-        end process;
-    end generate;
-
-    -- Single pixel output mode does not require DDR
-    single_pixel: if PARALLEL_PIXELS = 1 generate
-        rgb_data <= pixel_out when internal_de='1' else (others => '0');
-
-        single_diff_clk: if DIFF_RGB_CLK generate
-            o_clk: component CC_LVDS_OBUF
-                generic map(
-                    PIN_NAME_P => DIFF_CLK_PIN_NAME_P,
-                    PIN_NAME_N => DIFF_CLK_PIN_NAME_N,
-                    V_IO => DIFF_CLK_V_IO
-                )
-                port map (
-                    A => select_constant(INVERT_RGB_CLK, not pixel_clk_ddr, pixel_clk_ddr),
-                    O_P => rgb_clk_p,
-                    O_N => rgb_clk_n
-                );
-        else generate
-            rgb_clk_p <= not pixel_clk_ddr when INVERT_RGB_CLK else pixel_clk_ddr;
-            rgb_clk_n <= '0';
-        end generate;
-
-        rgb_vsync <= internal_vsync;
-        rgb_hsync <= internal_hsync;
-        rgb_de <= internal_de;
-    end generate;
+    -- The physical output stage is encapsulated in a separate component
+    output_stage: component rgb_output_stage
+        generic map (
+            PARALLEL_PIXELS     => PARALLEL_PIXELS,
+            INVERT_RGB_CLK      => INVERT_RGB_CLK,
+            DIFF_RGB_CLK        => DIFF_RGB_CLK,
+            DIFF_CLK_PIN_NAME_P => DIFF_CLK_PIN_NAME_P,
+            DIFF_CLK_PIN_NAME_N => DIFF_CLK_PIN_NAME_N,
+            DIFF_CLK_V_IO       => DIFF_CLK_V_IO
+        )
+        port map (
+            usr_reset_n     => usr_reset_n,
+            rgb_clk_p       => rgb_clk_p,
+            rgb_clk_n       => rgb_clk_n,
+            rgb_data        => rgb_data,
+            rgb_de          => rgb_de,
+            rgb_hsync       => rgb_hsync,
+            rgb_vsync       => rgb_vsync,
+            input_data_clk  => pixel_clk,
+            input_rgb_clk   => rgb_clk,
+            input_de        => internal_de,
+            input_hsync     => internal_hsync,
+            input_vsync     => internal_vsync,
+            input_data      => internal_rgb_data
+        );
 
     -- Generate Parallel RGB signals
     process(pixel_clk, usr_reset_n)
@@ -310,12 +228,11 @@ begin
             hbp_active <= '0';
             vfp_active <= '0';
             vbp_active <= '0';
+
             internal_hsync <= '0' xor SYNC_XOR;
             internal_vsync <= '0' xor SYNC_XOR;
             internal_de <= '0';
-
-            pixel_out(23 downto 0) <= (others => '0');
-            pixel_buf_ddr <= (others => '0');
+            internal_rgb_data <= (others => '0');
 
             pixel_eol <= '0';
             pixel_eof <= '0';
@@ -325,10 +242,7 @@ begin
         elsif rising_edge(pixel_clk) then
             -- We always store the incomming pixel data without caring about the TREADY
             -- signal for improving timing.
-            pixel_out(23 downto 0) <= pixel_tdata(23 downto 0);
-            if PARALLEL_PIXELS = 2 then
-                pixel_buf_ddr <= pixel_tdata(47 downto 24);
-            end if;
+            internal_rgb_data <=  pixel_tdata;
 
             -- Receive new pixel from AXI stream
             if pixel_tready = '1' then
