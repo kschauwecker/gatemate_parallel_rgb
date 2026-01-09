@@ -21,13 +21,14 @@ end toplevel;
 architecture rtl of toplevel is
     component parallel_rgb is
         generic (
-            PARALLEL_PIXELS: integer;                   -- 1 or 2; Must be 2 for 1080p to meet timing
+            PIXELS_PER_CLOCK: integer;                   -- 1 or 2; Must be 2 for 1080p to meet timing
             VIDEO_MODE: string;                         -- 1080p or 720p
             PERF_MODE: string;                          -- FPGA performance mode
             REF_CLK_FREQ: string;                       -- Frequency of reference clock in MHz
             INVERT_SYNCS: boolean := false;             -- Invert sync signals if true
             INVERT_RGB_CLK: boolean := false;           -- Inverts rgb_clk if true
             DIFF_RGB_CLK: boolean := true;              -- Choose between differential and single ended clock output
+            PIXEL_BUS_WIDTH: integer := 24;             -- 12 or 24; if 12 then DDR output will be used (reqires PIXELS_PER_CLOCK=2)
 
             -- Optional signals for differential clock output
             DIFF_CLK_PIN_NAME_P: string := "UNPLACED";  -- IO_<Dir><Bank>_<Pin><Pin#>
@@ -44,7 +45,7 @@ architecture rtl of toplevel is
             -- Parallel RGB output signals
             rgb_clk_p: out std_ulogic;
             rgb_clk_n: out std_ulogic;
-            rgb_data: out std_ulogic_vector(23 downto 0);
+            rgb_data: out std_ulogic_vector(PIXEL_BUS_WIDTH-1 downto 0);
             rgb_de: out std_ulogic;
             rgb_hsync: out std_ulogic;
             rgb_vsync: out std_ulogic;
@@ -53,7 +54,7 @@ architecture rtl of toplevel is
             pixel_clk: out std_ulogic;
 
             -- Input pixel data streamed by AXI Stream
-            pixel_tdata: in std_ulogic_vector(PARALLEL_PIXELS*24-1 downto 0);
+            pixel_tdata: in std_ulogic_vector(PIXELS_PER_CLOCK*24-1 downto 0);
             pixel_tvalid: in std_ulogic;
             pixel_tready: out std_ulogic;
             pixel_eol: out std_ulogic;
@@ -67,11 +68,10 @@ architecture rtl of toplevel is
         );
     end component;
 
-    constant PARALLEL_PIXELS: integer := 2;
-    constant VIDEO_MODE: string := "1080p";
-
-    -- constant PARALLEL_PIXELS: integer := 1;
-    -- constant VIDEO_MODE: string := "720p";
+    constant DIFFERENTIAL_CLOCK: boolean := true; -- or false
+    constant PIXEL_BUS_WIDTH: integer := 24; -- or 12
+    constant PIXELS_PER_CLOCK: integer := 2; -- or 1
+    constant VIDEO_MODE: string := "1080p"; -- or "720p"
 
     constant SCREEN_MAX_WIDTH: integer := 1920;
     constant SCREEN_MAX_HEIGHT: integer := 1080;
@@ -79,26 +79,39 @@ architecture rtl of toplevel is
     signal usr_reset_n: std_ulogic;
 
     signal pixel_clk: std_ulogic;
-    signal pixel_tdata: std_ulogic_vector(PARALLEL_PIXELS*24-1 downto 0);
+    signal pixel_tdata: std_ulogic_vector(PIXELS_PER_CLOCK*24-1 downto 0);
     signal pixel_tvalid: std_ulogic;
     signal pixel_tready: std_ulogic;
     signal pixel_eol: std_ulogic;
     signal pixel_eof: std_ulogic;
 
-    signal x: unsigned(log2(SCREEN_MAX_WIDTH/PARALLEL_PIXELS)-1 downto 0);
+    signal rgb_clk_p_unswapped: std_ulogic;
+    signal rgb_clk_n_unswapped: std_ulogic;
+
+    signal x: unsigned(log2(SCREEN_MAX_WIDTH/PIXELS_PER_CLOCK)-1 downto 0);
     signal y: unsigned(log2(SCREEN_MAX_HEIGHT)-1 downto 0);
     signal frame_counter: unsigned(7 downto 0);
     signal prev_frame_counter: unsigned(7 downto 0);
 begin
+    -- Differential clock pins are swappend on PCB
+    rgb_clk_p <= rgb_clk_n_unswapped when DIFFERENTIAL_CLOCK else rgb_clk_p_unswapped;
+    rgb_clk_n <= rgb_clk_p_unswapped when DIFFERENTIAL_CLOCK else rgb_clk_n_unswapped;
+
+    -- Unused pins in 12-bit mode
+    rgb_data(23 downto PIXEL_BUS_WIDTH) <= (others => '0');
+
+    pmod <= (others => '0');
+
     -- Componenbt for generating the Parallel RGB signals
     rgb: component parallel_rgb
         generic map (
             REF_CLK_FREQ => "25",
             PERF_MODE => "ECONOMY",
-            PARALLEL_PIXELS => PARALLEL_PIXELS,
+            PIXELS_PER_CLOCK => PIXELS_PER_CLOCK,
             VIDEO_MODE => VIDEO_MODE,
-            INVERT_RGB_CLK => true, -- Pins swapped on PCB
-            DIFF_RGB_CLK => true,
+            INVERT_RGB_CLK => DIFFERENTIAL_CLOCK, -- Pins swapped on PCB
+            DIFF_RGB_CLK => DIFFERENTIAL_CLOCK,
+            PIXEL_BUS_WIDTH => PIXEL_BUS_WIDTH,
 
             -- Differential pin settings not strictly neccessary
             -- but NEXTPNR does generate a warning if missing
@@ -109,9 +122,9 @@ begin
         port map (
             ref_clk         => ref_clk,
             usr_reset_n     => usr_reset_n,
-            rgb_clk_p       => rgb_clk_n,-- Pins swapped on PCB
-            rgb_clk_n       => rgb_clk_p,-- Pins swapped on PCB
-            rgb_data        => rgb_data,
+            rgb_clk_p       => rgb_clk_p_unswapped,
+            rgb_clk_n       => rgb_clk_n_unswapped,
+            rgb_data        => rgb_data(PIXEL_BUS_WIDTH-1 downto 0),
             rgb_de          => rgb_de,
             rgb_hsync       => rgb_hsync,
             rgb_vsync       => rgb_vsync,
@@ -137,21 +150,20 @@ begin
             pixel_tdata <= (others => '0');
             pixel_tvalid <= '0';
             led <= '0';
-            pmod <= (others => '0');
             frame_counter <= (others => '0');
             prev_frame_counter <= (others => '0');
         elsif rising_edge(pixel_clk) then
             led <= frame_counter(4);
-            pmod <= (others => '0');
 
             if pixel_tready = '1' or pixel_tvalid = '0' then
                 -- Output test data
-                pixel_tdata(23 downto 0) <= std_ulogic_vector(resize(x*PARALLEL_PIXELS, 8) & resize(y+prev_frame_counter, 8)
-                    & resize(x*PARALLEL_PIXELS+prev_frame_counter, 8));
-                if PARALLEL_PIXELS > 1 then
-                    pixel_tdata(47 downto 24) <= std_ulogic_vector(resize(x*PARALLEL_PIXELS+1, 8) & resize(y+prev_frame_counter, 8)
-                        & resize(x*PARALLEL_PIXELS+frame_counter+1, 8));
+                pixel_tdata(23 downto 0) <= std_ulogic_vector(resize(x*PIXELS_PER_CLOCK, 8) & resize(y+prev_frame_counter, 8)
+                    & resize(x*PIXELS_PER_CLOCK+prev_frame_counter, 8));
+                if PIXELS_PER_CLOCK > 1 then
+                    pixel_tdata(47 downto 24) <= std_ulogic_vector(resize(x*PIXELS_PER_CLOCK+1, 8) & resize(y+prev_frame_counter, 8)
+                        & resize(x*PIXELS_PER_CLOCK+frame_counter+1, 8));
                 end if;
+
                 pixel_tvalid <= '1';
 
                 -- Keep track of image location
@@ -164,6 +176,7 @@ begin
                 pixel_tvalid <= '0';
             end if;
 
+            -- frame_counter <= (others => '0');
             if pixel_eof = '1' then
                 y <= (others => '0');
                 x <= (others => '0');

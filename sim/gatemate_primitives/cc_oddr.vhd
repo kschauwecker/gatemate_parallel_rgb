@@ -17,15 +17,17 @@ end entity;
 architecture sim of CC_ODDR is
     signal ff_d0: std_ulogic := '0';
     signal ff_d1: std_ulogic := '0';
+    signal internal_clk: std_ulogic;
 begin
-    Q <= ff_d0 when DDR = '0' else ff_d1;
+    internal_clk <= not clk when CLK_INV /= 0 else clk;
+    Q <= ff_d0 when DDR = '1' else ff_d1;
 
-    process(CLK)
+    process(internal_clk)
     begin
-        if rising_edge(CLK) then
+        if rising_edge(internal_clk) then
             ff_d0 <= D0;
         end if;
-        if falling_edge(CLK) then
+        if falling_edge(internal_clk) then
             ff_d1 <= D1;
         end if;
     end process;

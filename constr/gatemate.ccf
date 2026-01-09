@@ -38,7 +38,7 @@
 # LVDS_BOOST={true,false}
 #   enables increased LVDS output current of 6.4mA (default: 3.2mA)
 # LVDS_TERM={true,false}
-#   enables on-chip LVDS termination resistor of nominal 100Ohm, in output mode only
+#   enables on-chip LVDS termination resistor of nominal 100Ohm, in input mode only
 #
 # Global IO constraints can be set with the default_GPIO statement. It can be
 # overwritten by individual settings for specific GPIOs, e.g.:
@@ -47,8 +47,9 @@
 Pin_in      "ref_clk"       Loc = "IO_SB_A8";
 Pin_out     "led"           Loc = "IO_SB_B4"; # D1
 
-Pin_out     "rgb_clk_p"     Loc = "IO_EA_B0";
-Pin_out     "rgb_clk_n"     Loc = "IO_EA_A0";
+Pin_out     "rgb_clk_p"     Loc = "IO_EA_B0" | SLEW = fast;
+Pin_out     "rgb_clk_n"     Loc = "IO_EA_A0" | SLEW = fast;
+
 Pin_out     "rgb_data[0]"   Loc = "IO_WB_A6" | SLEW = fast;
 Pin_out     "rgb_data[1]"   Loc = "IO_WB_B6" | SLEW = fast;
 Pin_out     "rgb_data[2]"   Loc = "IO_WB_A8" | SLEW = fast;

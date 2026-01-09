@@ -4,17 +4,20 @@ context synth.synth_context;
 -- Parallel RGB interface for GateMate FPGAs by Cologne Chip
 --
 -- Converts an AXI Stream of pixel data to parallel RGB signals.
--- Two modes are supported: 1080p @ 60 Hz and 720p @ 60 Hz
+-- Two video modes are supported: 1080p @ 60 Hz and 720p @ 60 Hz
+--
+-- Please see README.md for confirmed working configurations.
 
 entity parallel_rgb is
     generic (
-        PARALLEL_PIXELS: integer;                   -- 1 or 2; Must be 2 for 1080p to meet timing
+        PIXELS_PER_CLOCK: integer;                   -- 1 or 2; Must be 2 for 1080p to meet timing
         VIDEO_MODE: string;                         -- 1080p or 720p
         PERF_MODE: string;                          -- FPGA performance mode
         REF_CLK_FREQ: string;                       -- Frequency of reference clock in MHz
         INVERT_SYNCS: boolean := false;             -- Invert sync signals if true
         INVERT_RGB_CLK: boolean := false;           -- Inverts rgb_clk if true
         DIFF_RGB_CLK: boolean := true;              -- Choose between differential and single ended clock output
+        PIXEL_BUS_WIDTH: integer := 24;             -- 12 or 24; if 12 then DDR output will be used (reqires PIXELS_PER_CLOCK=2)
 
         -- Optional signals for differential clock output
         DIFF_CLK_PIN_NAME_P: string := "UNPLACED";  -- IO_<Dir><Bank>_<Pin><Pin#>
@@ -31,7 +34,7 @@ entity parallel_rgb is
         -- Parallel RGB output signals
         rgb_clk_p: out std_ulogic;
         rgb_clk_n: out std_ulogic; -- Not used if DIFF_RGB_CLK=false
-        rgb_data: out std_ulogic_vector(23 downto 0);
+        rgb_data: out std_ulogic_vector(PIXEL_BUS_WIDTH-1 downto 0);
         rgb_de: out std_ulogic;
         rgb_hsync: out std_ulogic;
         rgb_vsync: out std_ulogic;
@@ -41,7 +44,7 @@ entity parallel_rgb is
 
         -- Input pixel data streamed by AXI Stream. TVALID may only be '0'
         -- during blanking periods!
-        pixel_tdata: in std_ulogic_vector(PARALLEL_PIXELS*24-1 downto 0);
+        pixel_tdata: in std_ulogic_vector(PIXELS_PER_CLOCK*24-1 downto 0);
         pixel_tvalid: in std_ulogic;
         pixel_tready: out std_ulogic;
 
@@ -84,9 +87,10 @@ architecture rtl of parallel_rgb is
 
     component rgb_output_stage is
         generic (
-            PARALLEL_PIXELS: integer;                   -- 1 or 2; Must be 2 for 1080p to meet timing
+            PIXELS_PER_CLOCK: integer;                   -- 1 or 2; Must be 2 for 1080p to meet timing
             INVERT_RGB_CLK: boolean := false;           -- Inverts rgb_clk if true
             DIFF_RGB_CLK: boolean := true;              -- Choose between differential and single ended clock output
+            PIXEL_BUS_WIDTH: integer := 24;             -- 12 or 24; if 12 then DDR output will be used (reqires PIXELS_PER_CLOCK=2)
 
             -- Optional signals for differential clock output
             DIFF_CLK_PIN_NAME_P: string := "UNPLACED";  -- IO_<Dir><Bank>_<Pin><Pin#>
@@ -94,13 +98,10 @@ architecture rtl of parallel_rgb is
             DIFF_CLK_V_IO      : string := "UNDEFINED"  -- "1.8" or "2.5" Volt
         );
         port (
-            -- Async reset signal
-            usr_reset_n: in std_ulogic;
-
             -- Parallel RGB output signals
             rgb_clk_p: out std_ulogic;
             rgb_clk_n: out std_ulogic; -- Not used if DIFF_RGB_CLK=false
-            rgb_data: out std_ulogic_vector(23 downto 0);
+            rgb_data: out std_ulogic_vector(PIXEL_BUS_WIDTH-1 downto 0);
             rgb_de: out std_ulogic;
             rgb_hsync: out std_ulogic;
             rgb_vsync: out std_ulogic;
@@ -111,7 +112,7 @@ architecture rtl of parallel_rgb is
             input_de: in std_ulogic;
             input_hsync: in std_ulogic;
             input_vsync: in std_ulogic;
-            input_data: in std_ulogic_vector(PARALLEL_PIXELS*24-1 downto 0)
+            input_data: in std_ulogic_vector(PIXELS_PER_CLOCK*24-1 downto 0)
         );
     end component;
 
@@ -134,11 +135,11 @@ architecture rtl of parallel_rgb is
     signal rgb_clk: std_ulogic;
 
     -- State counters
-    signal x: unsigned(log2(SCREEN_WIDTH/PARALLEL_PIXELS)-1 downto 0);
+    signal x: unsigned(log2(SCREEN_WIDTH/PIXELS_PER_CLOCK)-1 downto 0);
     signal y: unsigned(log2(SCREEN_HEIGHT)-1 downto 0);
-    signal hporch_counter: unsigned(log2(maximum(HORIZONTAL_FRONT_PORCH, HORIZONTAL_BACK_PORCH)/PARALLEL_PIXELS)-1 downto 0);
+    signal hporch_counter: unsigned(log2(maximum(HORIZONTAL_FRONT_PORCH, HORIZONTAL_BACK_PORCH)/PIXELS_PER_CLOCK)-1 downto 0);
     signal vporch_counter: unsigned(log2(maximum(VERTICAL_FRONT_PORCH, VERTICAL_BACK_PORCH))-1 downto 0);
-    signal hsync_counter: unsigned(log2(HSYNC_LEN/PARALLEL_PIXELS)-1 downto 0);
+    signal hsync_counter: unsigned(log2(HSYNC_LEN/PIXELS_PER_CLOCK)-1 downto 0);
     signal vsync_counter: unsigned(log2(VSYNC_LEN+1)-1 downto 0);
 
     -- Front / backporch states
@@ -153,21 +154,21 @@ architecture rtl of parallel_rgb is
     signal internal_hsync: std_ulogic;
     signal internal_vsync: std_ulogic;
     signal internal_de: std_ulogic;
-    signal internal_rgb_data: std_ulogic_vector(PARALLEL_PIXELS*24 - 1 downto 0);
+    signal internal_rgb_data: std_ulogic_vector(PIXELS_PER_CLOCK*24 - 1 downto 0);
 
     signal row_ready: std_ulogic;
 begin
-    assert PARALLEL_PIXELS = 1 or PARALLEL_PIXELS = 2 severity failure;
+    assert PIXELS_PER_CLOCK = 1 or PIXELS_PER_CLOCK = 2 severity failure;
     assert VIDEO_MODE = "1080p" or VIDEO_MODE = "720p" severity failure;
 
     -- Generate main clock through PLL
     pll: component CC_PLL
         generic map (
             REF_CLK         => REF_CLK_FREQ,
-            OUT_CLK         => to_string(PIXEL_CLOCK / real(PARALLEL_PIXELS)),
+            OUT_CLK         => to_string(PIXEL_CLOCK / real(PIXELS_PER_CLOCK)),
             PERF_MD         => PERF_MODE,
             LOW_JITTER      => 1,
-            CLK180_DOUB     => select_constant(PARALLEL_PIXELS = 2, 1, 0)
+            CLK180_DOUB     => select_constant(PIXELS_PER_CLOCK = 2, 1, 0)
         )
         port map (
             CLK_REF             => ref_clk,
@@ -186,15 +187,15 @@ begin
     -- The physical output stage is encapsulated in a separate component
     output_stage: component rgb_output_stage
         generic map (
-            PARALLEL_PIXELS     => PARALLEL_PIXELS,
+            PIXELS_PER_CLOCK     => PIXELS_PER_CLOCK,
             INVERT_RGB_CLK      => INVERT_RGB_CLK,
             DIFF_RGB_CLK        => DIFF_RGB_CLK,
             DIFF_CLK_PIN_NAME_P => DIFF_CLK_PIN_NAME_P,
             DIFF_CLK_PIN_NAME_N => DIFF_CLK_PIN_NAME_N,
-            DIFF_CLK_V_IO       => DIFF_CLK_V_IO
+            DIFF_CLK_V_IO       => DIFF_CLK_V_IO,
+            PIXEL_BUS_WIDTH     => PIXEL_BUS_WIDTH
         )
         port map (
-            usr_reset_n     => usr_reset_n,
             rgb_clk_p       => rgb_clk_p,
             rgb_clk_n       => rgb_clk_n,
             rgb_data        => rgb_data,
@@ -240,21 +241,19 @@ begin
             pixel_tready <= '0';
             row_ready <= '1';
         elsif rising_edge(pixel_clk) then
-            -- We always store the incomming pixel data without caring about the TREADY
-            -- signal for improving timing.
-            internal_rgb_data <=  pixel_tdata;
-
             -- Receive new pixel from AXI stream
             if pixel_tready = '1' then
                 assert pixel_tvalid = '1' severity failure;
                 internal_de <= '1';
+                internal_rgb_data <=  pixel_tdata;
             else
                 internal_de <= '0';
+                internal_rgb_data <=  (others => '0'); -- Don't put out data during blanking
             end if;
 
             -- Increment x coordinate
             if (pixel_tready = '1' and pixel_tvalid = '1') or row_ready = '1' then
-                if x /= SCREEN_WIDTH/PARALLEL_PIXELS-1 then
+                if x /= SCREEN_WIDTH/PIXELS_PER_CLOCK-1 then
                     x <= x + 1;
                 else
                     -- Reached end of line
@@ -298,7 +297,7 @@ begin
 
             -- Generate hsync
             if hsync_active = '1' then
-                if hsync_counter /= HSYNC_LEN/PARALLEL_PIXELS - 1 then
+                if hsync_counter /= HSYNC_LEN/PIXELS_PER_CLOCK - 1 then
                     hsync_counter <= hsync_counter+1;
                 else
                     hsync_counter <= (others => '0');
@@ -328,8 +327,8 @@ begin
 
             -- Generate horizontal front/back porch
             if hfp_active = '1' or hbp_active = '1' then
-                if (hfp_active = '1' and hporch_counter /= HORIZONTAL_FRONT_PORCH/PARALLEL_PIXELS-1)
-                    or (hbp_active = '1' and hporch_counter /= HORIZONTAL_BACK_PORCH/PARALLEL_PIXELS-1)
+                if (hfp_active = '1' and hporch_counter /= HORIZONTAL_FRONT_PORCH/PIXELS_PER_CLOCK-1)
+                    or (hbp_active = '1' and hporch_counter /= HORIZONTAL_BACK_PORCH/PIXELS_PER_CLOCK-1)
                 then
                     hporch_counter <= hporch_counter + 1;
                 else

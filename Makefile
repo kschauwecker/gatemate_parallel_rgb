@@ -188,7 +188,8 @@ synth: build/log build/synth
 
 pnr: build/impl
 	$(NEXTPNR) $(NEXTPNR_FLAGS) --json build/synth/$(TOP)_synth.json --vopt ccf=constr/gatemate.ccf --sdc=constr/timing.sdc\
-		--write build/impl/$(TOP).json --report build/impl/timing.json --detailed-timing-report \
+		--write build/impl/$(TOP).json --detailed-timing-report --report build/impl/timing.json \
+		--sdf build/impl/delays.sdf \
 		--vopt out=build/impl/bitstream.txt --seed=$(SEED) --log build/log/impl.log;\
 	failed=`grep ERROR build/log/impl.log | wc -l`;\
 	if test $$failed -ne 0; then \
@@ -212,6 +213,7 @@ impl:
 		$(MAKE) SEED=$$i NEXTPNR_FLAGS="$(NEXTPNR_FLAGS) $(STRICT_TIMING_SETTINGS)" pnr  && break; \
 		test $$i -ne $(PLACING_MAX_RETRIES) || exit 1; \
 	done
+	jq . build/impl/timing.json > build/impl/timing_pretty.json
 	@echo "$(COL)Generating Bitfile$(CLR)"
 	$(GMPACK) build/impl/bitstream.txt build/bitfile.bit
 
