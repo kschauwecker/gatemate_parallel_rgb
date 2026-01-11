@@ -48,6 +48,29 @@ COL=\e[44m
 ERR=\e[41m
 CLR=\e[0m\e[49m
 
+help:
+	@echo "Availabel makefile rules:\n"
+	@echo "Simulation:"
+	@echo "sim:    Build and run simulation with GHDL"
+	@echo "xsim:   Run post-implementation simulation with Xilinx simulator"
+	@echo "icarus: Run post-implementation simulation with icarus"
+	@echo ""
+	@echo "Synthesis / Implementation:"
+	@echo "build:  Run synthesis, implementation and bitfile creation"
+	@echo "fbuild: Fast build, like build but run implementation with relaxed timing settings"
+	@echo "synth:  Run synthesis only"
+	@echo "impl:   Run implementation with strict timing settings and try different seeds if it fails"
+	@echo "fimpl:  Run implementation with relaxed timing settings"
+	@echo "bit:    Run bitfile creation only"
+	@echo ""
+	@echo "Program:"
+	@echo "run:    Loads the current bitfile to the FPGA through JTAG"
+	@echo "flash:  Flashes the current bitfile to the FPGA through JTAG"
+	@echo ""
+	@echo "Other"
+	@echo "gui:    Launches NEXTPNR GUI"
+	@echo "clean:  Delete all build files (including simulation)"
+
 ###################
 # GHDL SIMULATION #
 ###################
@@ -79,20 +102,6 @@ SIMLIB_OBJ:=$(addprefix $(SIMLIB_OBJDIR)/, $(notdir $(patsubst %.vhd,%.o,$(SIMLI
 
 SYNTHLIB_OBJDIR:=$(OBJDIR)/synth_lib
 SYNTHLIB_OBJ:=$(addprefix $(SYNTHLIB_OBJDIR)/, $(notdir $(patsubst %.vhd,%.o,$(SYNTHLIB_SOURCES))))
-
-help:
-	@echo "Availabel makefile rules:\n"
-	@echo "sim:    Build and run simulation with GHDL"
-	@echo "build:  Run synthesis, implementation and bitfile creation"
-	@echo "fbuild: Fast build, like build but run implementation with relaxed timing settings"
-	@echo "synth:  Run synthesis only"
-	@echo "impl:   Run implementation with strict timing settings and try different seeds if it fails"
-	@echo "fimpl:  Run implementation with relaxed timing settings"
-	@echo "bit:    Run bitfile creation only"
-	@echo "run:    Loads the current bitfile to the FPGA through JTAG"
-	@echo "flash:  Flashes the current bitfile to the FPGA through JTAG"
-	@echo "gui:    Launches NEXTPNR GUI"
-	@echo "clean:  Delete all build files (including simulation)"
 
 # Create build directories
 $(SRC_OBJDIR):
@@ -150,6 +159,13 @@ sim: $(SIM_OBJDIR)/$(SIM_MODULE)
 	cd $(SIM_OBJDIR) && $(GHDL) -r -v -P../src -P../sim -P../sim_lib --work=$(WORK_SIM) $(SIM_MODULE) \
 		--stop-time=$(MAX_TIME) --assert-level=$(ASSERT) --ieee-asserts=disable $(SIGNALS_ARG) $(GENERICS)
 
+####################
+# OTHER SIMULATION #
+####################
+
+xsim:
+	cd build && vivado -source ../xsim.tcl -tclargs $(OSS_CAD_DIR) $(CWD)
+
 ###################
 # YOSYS SYNTHESIS #
 ###################
@@ -203,6 +219,7 @@ pnr: build/impl
 fimpl:
 	@echo "$(COL)Fast Implementation$(CLR)"
 	$(MAKE) NEXTPNR_FLAGS="$(NEXTPNR_FLAGS) $(RELAXED_TIMING_SETTINGS)" pnr
+	$(MAKE) impl_netlist
 	@echo "$(COL)Generating Bitfile$(CLR)"
 	$(GMPACK) build/impl/bitstream.txt build/bitfile.bit
 
@@ -213,9 +230,16 @@ impl:
 		$(MAKE) SEED=$$i NEXTPNR_FLAGS="$(NEXTPNR_FLAGS) $(STRICT_TIMING_SETTINGS)" pnr  && break; \
 		test $$i -ne $(PLACING_MAX_RETRIES) || exit 1; \
 	done
-	jq . build/impl/timing.json > build/impl/timing_pretty.json
+	$(MAKE) impl_netlist
 	@echo "$(COL)Generating Bitfile$(CLR)"
 	$(GMPACK) build/impl/bitstream.txt build/bitfile.bit
+
+impl_netlist:
+	@echo "$(COL)Writing final Netlist$(CLR)"
+	$(YOSYS) -p "\
+		read_json $(CWD)/build/impl/$(TOP).json; \
+		write_verilog -norename $(CWD)/build/impl/$(TOP)_impl.v"
+	sed -i -e "s/^module top/module $(TOP)/" $(CWD)/build/impl/$(TOP)_impl.v
 
 run: build/bitfile.bit
 	$(LOADER) -r build/bitfile.bit

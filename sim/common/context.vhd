@@ -1,4 +1,5 @@
 context sim_context is
+    library std;
     use std.env.all;
     use std.textio.all;
 
@@ -13,7 +14,7 @@ context sim_context is
     library synth_lib;
     use synth_lib.synth_lib.all;
 
-    library synth;
+    --library synth;
 
     --library sim;
     -- use sim.components.all;
